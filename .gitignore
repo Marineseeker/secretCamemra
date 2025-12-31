@@ -1,15 +1,14 @@
+
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar  # 保留 wrapper jar（团队需要统一 gradle 版本）
+
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+.idea/
+
 local.properties
+
+.externalNativeBuild/
+.cxx/
+.DS_Store
+captures/

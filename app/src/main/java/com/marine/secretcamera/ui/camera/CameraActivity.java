@@ -8,10 +8,13 @@ import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.params.StreamConfigurationMap;
+import android.media.MediaCodec;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
+import android.util.Size;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -41,6 +44,8 @@ public class CameraActivity extends AppCompatActivity {
   private HandlerThread cameraThread;
   private Handler cameraHandler;
   private Surface previewSurface;
+  private MediaCodec videoEncoder;
+  private Surface encoderInputSurface;
 
   private final ActivityResultLauncher<String> cameraPermissionLauncher =
       registerForActivityResult(
@@ -54,6 +59,27 @@ public class CameraActivity extends AppCompatActivity {
             }
           }
       );
+  private Size choosePreviewSize(String cameraId) throws CameraAccessException {
+    CameraCharacteristics characteristics =
+        cameraManager.getCameraCharacteristics(cameraId);
+
+    StreamConfigurationMap map =
+        characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+
+    Size[] sizes = map.getOutputSizes(SurfaceHolder.class);
+
+    // 示例：优先选 16:9，且不超过 1920x1080
+    Size best = null;
+    for (Size s : sizes) {
+      float ratio = (float) s.getWidth() / s.getHeight();
+      if (Math.abs(ratio - 16f / 9f) < 0.01) {
+        if (best == null || s.getWidth() > best.getWidth()) {
+          best = s;
+        }
+      }
+    }
+    return best != null ? best : sizes[0];
+  }
 
   private final SurfaceHolder.Callback surfaceCallback = new SurfaceHolder.Callback() {
     @Override
@@ -65,6 +91,15 @@ public class CameraActivity extends AppCompatActivity {
     public void surfaceCreated(@NonNull SurfaceHolder holder) {
       startCameraThread();
       setCameraId();
+      Size previewSize = null;
+      try {
+        previewSize = choosePreviewSize(cameraId);
+      } catch (CameraAccessException e) {
+        throw new RuntimeException(e);
+      }
+      holder.setFixedSize(previewSize.getWidth(), previewSize.getHeight());
+
+
       // 永远只应该在surfaceCreated()中进入startCamera();
       // 永远应该在进入startCamera()之前检查权限
       if (ContextCompat.checkSelfPermission(CameraActivity.this,
