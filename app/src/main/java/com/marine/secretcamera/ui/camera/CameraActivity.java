@@ -8,13 +8,10 @@ import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CaptureRequest;
-import android.hardware.camera2.params.StreamConfigurationMap;
-import android.media.MediaCodec;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
-import android.util.Size;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -31,7 +28,10 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.marine.secretcamera.R;
+import com.marine.secretcamera.encoder.VideoEncoder;
+import com.marine.secretcamera.rtp.RtpSession;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -44,8 +44,9 @@ public class CameraActivity extends AppCompatActivity {
   private HandlerThread cameraThread;
   private Handler cameraHandler;
   private Surface previewSurface;
-  private MediaCodec videoEncoder;
-  private Surface encoderInputSurface;
+  private Surface encoderSurface;
+  private RtpSession rtpSession;
+  private VideoEncoder videoEncoder;
 
   private final ActivityResultLauncher<String> cameraPermissionLauncher =
       registerForActivityResult(
@@ -59,60 +60,12 @@ public class CameraActivity extends AppCompatActivity {
             }
           }
       );
-  private Size choosePreviewSize(String cameraId) throws CameraAccessException {
-    CameraCharacteristics characteristics =
-        cameraManager.getCameraCharacteristics(cameraId);
 
-    StreamConfigurationMap map =
-        characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-
-    Size[] sizes = map.getOutputSizes(SurfaceHolder.class);
-
-    // 示例：优先选 16:9，且不超过 1920x1080
-    Size best = null;
-    for (Size s : sizes) {
-      float ratio = (float) s.getWidth() / s.getHeight();
-      if (Math.abs(ratio - 16f / 9f) < 0.01) {
-        if (best == null || s.getWidth() > best.getWidth()) {
-          best = s;
-        }
-      }
-    }
-    return best != null ? best : sizes[0];
+  @Override
+  protected void onDestroy() {
+    super.onDestroy();
+    closeCamera();
   }
-
-  private final SurfaceHolder.Callback surfaceCallback = new SurfaceHolder.Callback() {
-    @Override
-    public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
-
-    }
-
-    @Override
-    public void surfaceCreated(@NonNull SurfaceHolder holder) {
-      startCameraThread();
-      setCameraId();
-      Size previewSize = null;
-      try {
-        previewSize = choosePreviewSize(cameraId);
-      } catch (CameraAccessException e) {
-        throw new RuntimeException(e);
-      }
-      holder.setFixedSize(previewSize.getWidth(), previewSize.getHeight());
-
-
-      // 永远只应该在surfaceCreated()中进入startCamera();
-      // 永远应该在进入startCamera()之前检查权限
-      if (ContextCompat.checkSelfPermission(CameraActivity.this,
-          Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-        startCamera(cameraId);
-      }
-    }
-
-    @Override
-    public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
-      closeCamera();
-    }
-  };
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -131,12 +84,46 @@ public class CameraActivity extends AppCompatActivity {
         != PackageManager.PERMISSION_GRANTED) {
       cameraPermissionLauncher.launch(Manifest.permission.CAMERA);
     }
+    rtpSession = new RtpSession();
 
+    videoEncoder = new VideoEncoder();
+    videoEncoder.setRtpSession(rtpSession);
     surfaceView = findViewById(R.id.surfaceView);
     SurfaceHolder holder = surfaceView.getHolder();
     holder.addCallback(surfaceCallback);
   }
 
+  private final SurfaceHolder.Callback surfaceCallback = new SurfaceHolder.Callback() {
+    @Override
+    public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
+
+    }
+
+    @Override
+    public void surfaceCreated(@NonNull SurfaceHolder holder) {
+      startCameraThread();
+      setCameraId();
+      holder.setFixedSize(1920,  1080);
+      try {
+        rtpSession.start("192.168.191.128", 5000, 30);
+//        rtpSession.start("47.108.73.56", 5000, 30);
+      } catch (Exception e) {
+        Log.e("CameraActivity", "failed to start rtp session");
+        throw new RuntimeException(e);
+      }
+      // 永远只应该在surfaceCreated()中进入startCamera();
+      // 永远应该在进入startCamera()之前检查权限
+      if (ContextCompat.checkSelfPermission(CameraActivity.this,
+          Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+        startCamera(cameraId);
+      }
+    }
+
+    @Override
+    public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
+      closeCamera();
+    }
+  };
 
   private void setCameraId() {
     try {
@@ -186,6 +173,18 @@ public class CameraActivity extends AppCompatActivity {
         @Override
         public void onOpened(@NonNull CameraDevice camera) {
           cameraDevice = camera;
+
+          try{
+            encoderSurface = videoEncoder.prepare(
+                1920,
+                1080,
+                30,
+                2000000);
+          }catch (IOException e) {
+            Log.e("CameraActivity", "init encoder failed");
+            return;
+          }
+
           createCameraSession();
         }
 
@@ -210,8 +209,11 @@ public class CameraActivity extends AppCompatActivity {
     if (previewSurface == null) {
       return;
     }
+    // 添加两个输出源, 分别是用于预览的 previewSurface, 与用于编码的 encoderSurface
+    // encoder 会监听 encoderSurface, 零拷贝地从中取出视频流数据
     List<Surface> outputs = new ArrayList<>();
     outputs.add(previewSurface);
+    outputs.add(encoderSurface);
 
     try {
       //  createCaptureSession(List<Surface> outputs,
@@ -243,13 +245,16 @@ public class CameraActivity extends AppCompatActivity {
           //  并执行 CaptureRequest。
           cameraCaptureSession = session;
           try {
+            // CaptureRequest.Builder 用于构造一个捕获请求
             CaptureRequest.Builder builder =
                 cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             builder.addTarget(previewSurface);
+            builder.addTarget(encoderSurface);
 
             builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON);
             builder.set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO);
 
+            // 讲这个捕获请求发送到 session
             cameraCaptureSession.setRepeatingRequest(builder.build(), null, cameraHandler);
           } catch (CameraAccessException e) {
             Log.e("CameraActivity", "failed to start preview");
@@ -264,9 +269,9 @@ public class CameraActivity extends AppCompatActivity {
     cameraHandler = new Handler(cameraThread.getLooper());
   }
 
+
   //  closeCamera() 负责停止重复请求、关闭 cameraCaptureSession、关闭 cameraDevice，并停止后台线程。
   private void closeCamera() {
-    // todo 关闭摄像头, 关闭后台线程, 停止推流
     if (cameraCaptureSession != null) {
       cameraCaptureSession.close();
       cameraCaptureSession = null;
@@ -287,5 +292,13 @@ public class CameraActivity extends AppCompatActivity {
         Log.e("CameraActivity", "Interrupted while quitting camera thread", e);
       }
     }
+    if(videoEncoder != null) {
+      videoEncoder.stop();
+      videoEncoder = null;
+    }
+    if (rtpSession != null) {
+      rtpSession.stop();
+    }
   }
+
 }
