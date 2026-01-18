@@ -9,14 +9,15 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.marine.secretcamera.R;
+import com.marine.secretcamera.device.DeviceInfo;
 
 import java.util.List;
 
 public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.ViewHolder> {
 
-  private final List<String> devices;
+  private final List<DeviceInfo> devices;
 
-  public DeviceAdapter(List<String> devices) {
+  public DeviceAdapter(List<DeviceInfo> devices) {
     this.devices = devices;
   }
 
@@ -30,8 +31,8 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.ViewHolder
 
   @Override
   public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-    holder.tvDeviceName.setText(devices.get(position));
-    holder.tvDeviceStatus.setText("在线");
+    DeviceInfo device = devices.get(position);
+    holder.tvDeviceName.setText(device.deviceName != null ? device.deviceName : device.deviceId);
   }
 
   @Override
@@ -39,7 +40,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.ViewHolder
     return devices.size();
   }
 
-  static class ViewHolder extends RecyclerView.ViewHolder {
+  public static class ViewHolder extends RecyclerView.ViewHolder {
     TextView tvDeviceName;
     TextView tvDeviceStatus;
 

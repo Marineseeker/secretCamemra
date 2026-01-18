@@ -100,15 +100,15 @@ public class VideoEncoder {
       int index = mediaCodec.dequeueOutputBuffer(bufferInfo, 10_000);
 
       if (index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-          MediaFormat newFormat = mediaCodec.getOutputFormat();
-          Log.i(TAG, "Output format changed: " + newFormat);
-        } else if (index >= 0) {
-          // index >= 0: 这是最常见的情况，表示成功获取到了一个编码完成的数据帧的索引。
-          // 存储编码器输出的原始二进制数据，即 H.264 裸流的 NALU 数据（包含 SPS/PPS、I/P/B 帧切片）
-          ByteBuffer encodedData = mediaCodec.getOutputBuffer(index);
+        MediaFormat newFormat = mediaCodec.getOutputFormat();
+        Log.i(TAG, "Output format changed: " + newFormat);
+      } else if (index >= 0) {
+        // index >= 0: 这是最常见的情况，表示成功获取到了一个编码完成的数据帧的索引。
+        // 存储编码器输出的原始二进制数据，即 H.264 裸流的 NALU 数据（包含 SPS/PPS、I/P/B 帧切片）
+        ByteBuffer encodedData = mediaCodec.getOutputBuffer(index);
 
-          // 根据 bufferInfo 对齐 encodedData
-          if (encodedData != null && bufferInfo.size > 0) {
+        // 根据 bufferInfo 对齐 encodedData
+        if (encodedData != null && bufferInfo.size > 0) {
           encodedData.position(bufferInfo.offset);
           encodedData.limit(bufferInfo.offset + bufferInfo.size);
 
