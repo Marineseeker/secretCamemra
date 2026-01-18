@@ -34,6 +34,8 @@ android {
 }
 
 dependencies {
+    //swipe refresh
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0-alpha01")
     // Camera2
     implementation("androidx.camera:camera-core:1.3.3")
     implementation("androidx.camera:camera-camera2:1.3.3")
