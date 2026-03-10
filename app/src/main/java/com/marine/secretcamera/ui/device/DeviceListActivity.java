@@ -19,6 +19,7 @@ import com.google.gson.reflect.TypeToken;
 import com.marine.secretcamera.R;
 import com.marine.secretcamera.device.DeviceInfo;
 import com.marine.secretcamera.device.DeviceManager;
+import com.marine.secretcamera.net.OkHttpManager;
 import com.marine.secretcamera.net.WebSocketManager;
 import com.marine.secretcamera.ui.camera.CameraActivity;
 
@@ -29,7 +30,6 @@ import java.util.List;
 
 import okhttp3.Call;
 import okhttp3.Callback;
-import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
@@ -40,7 +40,7 @@ public class DeviceListActivity extends AppCompatActivity {
   private DeviceAdapter deviceAdapter;
   private SwipeRefreshLayout swipeRefreshLayout;
 
-  private final OkHttpClient client = new OkHttpClient();
+//  private OkHttpClient client;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -48,7 +48,11 @@ public class DeviceListActivity extends AppCompatActivity {
     setContentView(R.layout.activity_device_list);
 
     swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout);
-
+//    client = new OkHttpClient.Builder()
+//        .connectTimeout(5, TimeUnit.SECONDS)
+//        .readTimeout(5, TimeUnit.SECONDS)
+//        .writeTimeout(5, TimeUnit.SECONDS)
+//        .build();
 
     RecyclerView recyclerView = findViewById(R.id.rvDeviceList);
     recyclerView.setLayoutManager(new LinearLayoutManager(this));
@@ -61,13 +65,7 @@ public class DeviceListActivity extends AppCompatActivity {
 
     // 上线
     DeviceInfo deviceInfo = DeviceManager.getInstace(this).getDeviceInfo();
-    WebSocketManager webSocketManager = WebSocketManager.getInstance();
-    webSocketManager.setOnOpenListener(() -> {
-      Log.i("DeviceListActivity", "webSocket now opened, going online");
-      webSocketManager.goOnline(deviceInfo);
-    });
-
-    webSocketManager.connect();
+    WebSocketManager.getInstance().connect(deviceInfo);
 
     Button btnStartPush = findViewById(R.id.btnStartPush);
     btnStartPush.setOnClickListener(v -> {
@@ -84,11 +82,12 @@ public class DeviceListActivity extends AppCompatActivity {
     Request request = new Request.Builder()
         .url("http://47.108.73.56:8080/api/online_devices")
         .build();
-    client.newCall(request).enqueue(new Callback() {
+    OkHttpManager.getInstance().newCall(request).enqueue(new Callback() {
       @Override
       public void onFailure(@NonNull Call call, @NonNull IOException e) {
         Log.e("DeviceListActivity", "Failed to fetch device info", e);
         mainHandler.post(() -> Toast.makeText(DeviceListActivity.this, "获取设备列表失败", Toast.LENGTH_SHORT).show());
+        swipeRefreshLayout.setRefreshing(false);
       }
 
       @Override
@@ -103,7 +102,7 @@ public class DeviceListActivity extends AppCompatActivity {
           ResponseBody body = response.body();
           if (body == null) {
             Log.e("DeviceListActivity", "response body is null");
-            mainHandler.post(() -> Toast.makeText(DeviceListActivity.this, "无法读取服务器响应", Toast.LENGTH_SHORT).show());
+            mainHandler.post(() -> Toast.makeText(DeviceListActivity.this, "服务器响应为空", Toast.LENGTH_SHORT).show());
             return;
           }
 
@@ -112,7 +111,7 @@ public class DeviceListActivity extends AppCompatActivity {
             json = body.string();
           } catch (Exception e) {
             Log.e("DeviceListActivity", "Failed to read response body", e);
-            mainHandler.post(() -> Toast.makeText(DeviceListActivity.this, "无法读取服务器响应", Toast.LENGTH_SHORT).show());
+            mainHandler.post(() -> Toast.makeText(DeviceListActivity.this, "无法解析服务器响应", Toast.LENGTH_SHORT).show());
             return;
           } finally {
             body.close();
@@ -122,7 +121,8 @@ public class DeviceListActivity extends AppCompatActivity {
 
           try {
             Gson gson = new Gson();
-            Type listType = new TypeToken<List<DeviceInfo>>(){}.getType();
+            Type listType = new TypeToken<List<DeviceInfo>>() {
+            }.getType();
             final List<DeviceInfo> fetched = gson.fromJson(json, listType);
             mainHandler.post(() -> {
               deviceInfos.clear();
@@ -137,7 +137,7 @@ public class DeviceListActivity extends AppCompatActivity {
           Log.e("DeviceListActivity", "Failed to read response body", e);
           mainHandler.post(() -> Toast.makeText(DeviceListActivity.this, "解析设备列表失败", Toast.LENGTH_SHORT).show());
         } finally {
-           mainHandler.post(() -> swipeRefreshLayout.setRefreshing(false));
+          mainHandler.post(() -> swipeRefreshLayout.setRefreshing(false));
         }
       }
     });

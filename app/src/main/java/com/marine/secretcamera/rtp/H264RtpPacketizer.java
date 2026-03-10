@@ -17,8 +17,27 @@ public class H264RtpPacketizer {
   public void setCallback(NaluCallback callback) {
     this.callback = callback;
   }
+  // 将 h264 裸流转化成为 NALU包以求在网络中传输
+  // h264裸流的内容:
+  //  +-------------------+
+  //  | Start Code        |  (00 00 01 / 00 00 00 01)
+  //  +-------------------+
+  //  | NALU Header       |  (1 byte)
+  //  +-------------------+
+  //  | NALU Payload      |
+  //  +-------------------+
+  // NALU 的格式内容:
+  // [Start Code] [NALU Header] [NALU Payload]
+  // Start Code 是一个特殊的字节序列，通常是 0x000001 或 0x00000001，用于标识 NALU 的开始
+
+  // NALU Header 是一个字节，包含了 NALU 的类型和一些其他信息
+  // +---------------+
+  // |F|NRI|  Type   |
+  // +---------------+
+  //  1  2     5
+
   public void consume(ByteBuffer data) {
-    // 1. 复制ByteBuffer并转化为 byte[]
+    // 复制ByteBuffer并转化为 byte[]
     ByteBuffer dup = data.duplicate();
     byte[] raw = new byte[dup.remaining()];
     dup.get(raw);
@@ -49,6 +68,7 @@ public class H264RtpPacketizer {
         System.arraycopy(raw, nalHeader, nalu, 0, nalSize);
 
         // 3.5.2 解析NALU类型是否为关键帧
+        // 和1与可以保留自身, 和0零与会消除自身, 于是和00011111F做与就能保留后五位, 消除前三位
         int type = nalu[0] & 0x1F; // NALU Header 的后五位表示类型
         boolean isKey = (type == 5); // 类型 5 表示 IDR 关键帧
 

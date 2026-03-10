@@ -23,6 +23,10 @@ public class VideoEncoder {
 
   private RtpSession rtpSession;
 
+  public VideoEncoder(RtpSession rtpSession) {
+    this.rtpSession = rtpSession;
+  }
+
   public void setRtpSession(RtpSession rtpSession) {
     this.rtpSession = rtpSession;
   }

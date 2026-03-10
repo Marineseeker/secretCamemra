@@ -17,7 +17,6 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
 import androidx.activity.EdgeToEdge;
-import androidx.activity.result.ActivityResultCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
@@ -48,14 +47,21 @@ public class CameraActivity extends AppCompatActivity {
   private RtpSession rtpSession;
   private VideoEncoder videoEncoder;
 
+  // requestPermissions(String[] permissions, int requestCode)
+  //requestPermissions(new String[]{Manifest.permission.CAMERA}, 1);
   private final ActivityResultLauncher<String> cameraPermissionLauncher =
+      // registerForActivityResult 接受两个参数, 分别用于
+      // 1. 定义Result的类型
+      // 2. 定义拿到Result之后的回调函数
       registerForActivityResult(
           new ActivityResultContracts.RequestPermission(),
-          new ActivityResultCallback<Boolean>() {
-            @Override
-            public void onActivityResult(Boolean isGranted) {
-              if (!isGranted) {
-                finish();
+          isGranted -> {
+            if (!isGranted) {
+              finish();
+            } else {
+              Surface surface = surfaceView.getHolder().getSurface();
+              if(surface != null && surface.isValid()) {
+                startCamera(cameraId);
               }
             }
           }
@@ -80,14 +86,17 @@ public class CameraActivity extends AppCompatActivity {
       return insets;
     });
 
+    // 在页面启动的时候检查自身是否有权限
     if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
         != PackageManager.PERMISSION_GRANTED) {
+      // 如果没有相机权限, 请求
+      // todo 在这里请求到相机权限之后, 屏幕黑屏
       cameraPermissionLauncher.launch(Manifest.permission.CAMERA);
     }
     rtpSession = new RtpSession();
 
-    videoEncoder = new VideoEncoder();
-    videoEncoder.setRtpSession(rtpSession);
+    videoEncoder = new VideoEncoder(rtpSession);
+    // videoEncoder.setRtpSession(rtpSession);
     surfaceView = findViewById(R.id.surfaceView);
     SurfaceHolder holder = surfaceView.getHolder();
     holder.addCallback(surfaceCallback);
@@ -96,9 +105,11 @@ public class CameraActivity extends AppCompatActivity {
   private final SurfaceHolder.Callback surfaceCallback = new SurfaceHolder.Callback() {
     @Override
     public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
-
     }
 
+    // 在 surface 创建完成的回调中做两件事:
+    // 开启 rtpSession
+    // 开启摄像头
     @Override
     public void surfaceCreated(@NonNull SurfaceHolder holder) {
       startCameraThread();
@@ -262,13 +273,12 @@ public class CameraActivity extends AppCompatActivity {
         }
       };
 
-
   private void startCameraThread() {
+    // CameraThread 的三个组件 Thread, Handler, Looper
     cameraThread = new HandlerThread("CameraThread");
     cameraThread.start();
     cameraHandler = new Handler(cameraThread.getLooper());
   }
-
 
   //  closeCamera() 负责停止重复请求、关闭 cameraCaptureSession、关闭 cameraDevice，并停止后台线程。
   private void closeCamera() {
@@ -300,5 +310,4 @@ public class CameraActivity extends AppCompatActivity {
       rtpSession.stop();
     }
   }
-
 }

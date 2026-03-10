@@ -95,7 +95,6 @@ public class RtpSession {
   //  单 RTP 包放不下
   //  必须拆成多个 RTP 包
   //  使用 FU-A（Fragmentation Unit - Type 28）
-
   public void sendNalu(byte[] nalu, int type, boolean isKeyFrame) {
     if (nalu.length <= MAX_SINGLE_NALU_SIZE) {
       sendSingleNalu(nalu);
