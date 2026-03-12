@@ -34,6 +34,9 @@ android {
 }
 
 dependencies {
+    //lombok
+    compileOnly("org.projectlombok:lombok:1.18.34")
+    annotationProcessor("org.projectlombok:lombok:1.18.34")
     //swipe refresh
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0-alpha01")
     // Camera2
